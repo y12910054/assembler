@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUSTOM CPU ASSEMBLER + SIMULATOR</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root {
+  --g:  #00ff88; --gd: #00aa55; --gdk: #003322; --gdkk: #001a0f;
+  --a:  #ffaa00; --ad: #cc8800;
+  --r:  #ff3355; --rd: #cc0033;
+  --b:  #00aaff; --bd: #0066cc;
+  --bg: #050f0a; --panel: #07120d; --border: #00ff8830;
+  --hl: #00ff8818;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--g);font-family:'Share Tech Mono',monospace;display:flex;flex-direction:column}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:9999}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes glow{0%,100%{text-shadow:0 0 8px var(--g)}50%{text-shadow:0 0 20px var(--g),0 0 40px var(--gd)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 4px var(--g)}50%{box-shadow:0 0 16px var(--g),0 0 30px var(--gd)}}
+@keyframes activeComp{0%{filter:brightness(1)}50%{filter:brightness(2) drop-shadow(0 0 8px var(--g))}100%{filter:brightness(1)}}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+/* HEADER */
+header{flex-shrink:0;border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:16px;background:#040c08;position:relative}
+header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--g),transparent);animation:glow 4s infinite}
+.logo{font-family:'VT323',monospace;font-size:2rem;color:var(--g);animation:glow 3s infinite;letter-spacing:3px}
+.logo span{color:var(--a)}
+.subtitle{font-size:.6rem;color:var(--gd);letter-spacing:2px}
+.cursor{display:inline-block;width:8px;height:.9em;background:var(--g);vertical-align:middle;animation:blink 1s step-end infinite;margin-left:3px}
+header .status-chips{margin-left:auto;display:flex;gap:8px;align-items:center}
+.chip{font-size:.6rem;letter-spacing:1px;padding:3px 10px;border:1px solid;color:var(--gd);border-color:var(--gdk)}
+.chip.ok{color:var(--g);border-color:var(--gd);animation:pulse 2s infinite}
+.chip.err{color:var(--r);border-color:var(--rd)}
+.chip.run{color:var(--a);border-color:var(--ad);animation:pulse 1s infinite}
+
+/* MAIN LAYOUT */
+.main{flex:1;display:grid;grid-template-columns:42% 26% 32%;grid-template-rows:1fr;overflow:hidden}
+.panel{border:1px solid var(--border);display:flex;flex-direction:column;background:var(--panel);overflow:hidden;position:relative}
+.ph{padding:6px 12px;border-bottom:1px solid var(--border);font-size:.65rem;letter-spacing:2px;color:var(--gd);display:flex;align-items:center;gap:6px;background:#050e09;flex-shrink:0}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--g);box-shadow:0 0 5px var(--g)}
+.dot.a{background:var(--a);box-shadow:0 0 5px var(--a);animation:blink 2s ease-in-out infinite}
+.dot.r{background:var(--r);box-shadow:0 0 5px var(--r);animation:blink 2.5s ease-in-out infinite}
+
+/* EDITOR */
+.editor-wrap{flex:1;display:flex;overflow:hidden}
+.gutter{padding:12px 4px;min-width:52px;background:#040c07;border-right:1px solid var(--border);overflow:hidden;user-select:none;flex-shrink:0}
+.gutter-row{display:flex;align-items:center;justify-content:flex-end;gap:4px;height:1.55em;padding-right:4px}
+.gutter-num{font-size:.72rem;color:#004422;min-width:18px;text-align:right}
+.gutter-err{width:8px;height:8px;border-radius:50%;background:var(--r);box-shadow:0 0 4px var(--r);flex-shrink:0;cursor:pointer;position:relative}
+.gutter-warn{width:8px;height:8px;border-radius:50%;background:var(--a);box-shadow:0 0 4px var(--a);flex-shrink:0}
+.gutter-ok{width:8px;height:8px;border-radius:50%;background:var(--gdk);flex-shrink:0}
+.gutter-pc{background:var(--a) !important;box-shadow:0 0 8px var(--a) !important;animation:pulse 1s infinite}
+textarea{flex:1;background:transparent;border:none;outline:none;color:var(--g);font-family:'Share Tech Mono',monospace;font-size:.82rem;line-height:1.55;padding:12px 10px;resize:none;caret-color:var(--g);overflow-y:auto}
+textarea::selection{background:#00ff8825}
+textarea::placeholder{color:#003320}
+
+/* ERROR LIST */
+.err-list{border-top:1px solid var(--border);max-height:80px;overflow-y:auto;background:#080500;flex-shrink:0}
+.err-item{padding:3px 10px;font-size:.65rem;color:var(--r);cursor:pointer;border-bottom:1px solid #ff335510;display:flex;gap:6px;animation:fadeSlide .2s ease}
+.err-item:hover{background:#ff335510}
+.err-item .elabel{color:var(--rd);min-width:40px}
+
+/* OUTPUT */
+.out-body{flex:1;overflow-y:auto;padding:10px;font-size:.78rem;line-height:1.7}
+.out-body .oi-addr{color:var(--gdk)}
+.out-body .oi-bin{color:#00ffaa}
+.out-body .oi-hex{color:var(--a)}
+.out-body .oi-mnem{color:var(--g)}
+.out-body .oi-src{color:var(--gdk)}
+.out-body .oi-err{color:var(--r)}
+.out-body .oi-lbl{color:var(--a)}
+.out-body .oi-exp{color:var(--gd);opacity:.8}
+.out-body .oi-comment{color:var(--gdk)}
+.out-body .pc-row{background:var(--hl);border-left:2px solid var(--a)}
+.out-body .exe-row{background:#00ff8808}
+
+/* CONTROLS ROW */
+.ctrls{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border);background:#050e09;flex-wrap:wrap;flex-shrink:0;align-items:center}
+button{font-family:'Share Tech Mono',monospace;font-size:.65rem;letter-spacing:1px;padding:5px 14px;background:transparent;border:1px solid var(--g);color:var(--g);cursor:pointer;transition:all .1s;text-transform:uppercase;position:relative;overflow:hidden}
+button::before{content:'';position:absolute;inset:0;background:var(--g);transform:translateX(-101%);transition:.12s;z-index:0}
+button span{position:relative;z-index:1}
+button:hover{color:var(--bg)}
+button:hover::before{transform:translateX(0)}
+button:active{transform:scale(.97)}
+button.s{border-color:var(--gd);color:var(--gd)}
+button.s::before{background:var(--gd)}
+button.am{border-color:var(--a);color:var(--a)}
+button.am::before{background:var(--a)}
+button.danger{border-color:var(--r);color:var(--r)}
+button.danger::before{background:var(--r)}
+button:disabled{opacity:.3;cursor:not-allowed}
+button:disabled:hover{color:inherit}
+button:disabled:hover::before{transform:translateX(-101%)}
+select{font-family:'Share Tech Mono',monospace;font-size:.65rem;background:var(--panel);border:1px solid var(--border);color:var(--g);padding:5px 8px;outline:none;cursor:pointer}
+select option{background:var(--bg)}
+
+/* SIMULATOR PANEL */
+.sim-section{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sim-section h3{font-size:.6rem;letter-spacing:2px;color:var(--gd);margin-bottom:6px}
+.regs{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.reg-item{border:1px solid var(--border);padding:5px 8px;display:flex;justify-content:space-between;align-items:center;transition:border-color .2s,background .2s}
+.reg-item.changed{border-color:var(--g);background:var(--hl);animation:pulse .5s ease}
+.reg-item.active{border-color:var(--a);background:#ffaa0015}
+.reg-name{font-size:.6rem;color:var(--gd)}
+.reg-val{font-size:.85rem;color:var(--g);font-family:'VT323',monospace}
+.flags{display:flex;gap:6px;margin-top:4px}
+.flag{border:1px solid var(--border);padding:3px 8px;font-size:.6rem;flex:1;text-align:center;transition:all .2s}
+.flag.set{border-color:var(--g);color:var(--g);background:var(--hl)}
+.flag.clr{color:var(--gdk)}
+
+/* RAM VIEW */
+.ram-grid{display:grid;grid-template-columns:repeat(16,1fr);gap:1px;margin-top:6px}
+.ram-cell{font-size:.55rem;text-align:center;padding:2px 0;border:1px solid #00ff8810;color:var(--gdk);cursor:pointer;font-family:'VT323',monospace;transition:all .15s}
+.ram-cell.nz{color:var(--gd);border-color:var(--border)}
+.ram-cell.active{border-color:var(--a);color:var(--a);background:#ffaa0015}
+.ram-cell.changed{border-color:var(--g);color:var(--g);background:var(--hl)}
+.ram-hdr{display:grid;grid-template-columns:repeat(16,1fr);gap:1px;margin-top:6px}
+.ram-hdr-cell{font-size:.45rem;text-align:center;color:var(--gdk)}
+
+/* STEP LOG */
+.step-log{flex:1;overflow-y:auto;padding:6px 10px}
+.log-item{font-size:.65rem;line-height:1.5;border-bottom:1px solid #00ff8808;padding:2px 0;animation:fadeSlide .15s ease}
+.log-item .log-step{color:var(--gdk);margin-right:6px}
+.log-item .log-desc{color:var(--gd)}
+.log-item .log-pc{color:var(--a);margin-right:4px}
+.log-item.latest{color:var(--g)}
+.log-item.latest .log-desc{color:var(--g)}
+
+/* ARCH DIAGRAM PANEL */
+.arch-panel{flex-shrink:0;border-top:1px solid var(--border);background:#040a07;height:220px;position:relative;overflow:hidden}
+.arch-panel .ph{cursor:pointer;user-select:none}
+.arch-panel .ph:hover{background:#0a1a0f}
+.arch-svg-wrap{padding:4px;display:flex;justify-content:center;height:calc(100% - 30px)}
+svg#arch{width:100%;height:100%;overflow:visible}
+
+/* SVG component styles */
+.comp{transition:all .3s}
+.comp rect{fill:#070f0b;stroke:var(--border);stroke-width:1;transition:all .3s;rx:3}
+.comp text{fill:var(--gd);font-family:'Share Tech Mono',monospace;font-size:11px;dominant-baseline:middle;text-anchor:middle;transition:fill .3s;pointer-events:none}
+.comp.active rect{fill:#00ff8815;stroke:var(--g);stroke-width:2;filter:drop-shadow(0 0 6px var(--g))}
+.comp.active text{fill:var(--g)}
+.comp.active2 rect{fill:#ffaa0015;stroke:var(--a);stroke-width:2;filter:drop-shadow(0 0 6px var(--a))}
+.comp.active2 text{fill:var(--a)}
+.bus-rect{fill:#00ff8808;stroke:var(--gdk);stroke-width:1;transition:all .3s}
+.bus-rect.active{fill:var(--hl);stroke:var(--g);stroke-width:2;filter:drop-shadow(0 0 8px var(--g))}
+.bus-text{fill:var(--gdk);font-family:'Share Tech Mono',monospace;font-size:11px;dominant-baseline:middle;text-anchor:middle}
+.bus-text.active{fill:var(--g)}
+.conn{stroke:var(--gdk);stroke-width:1;fill:none;transition:all .3s;marker-end:url(#arr)}
+.conn.active{stroke:var(--g);stroke-width:2;filter:drop-shadow(0 0 4px var(--g));marker-end:url(#arr-active)}
+.conn.active2{stroke:var(--a);stroke-width:2;filter:drop-shadow(0 0 4px var(--a));marker-end:url(#arr-active2)}
+.lbl{fill:#003322;font-family:'Share Tech Mono',monospace;font-size:8px;dominant-baseline:middle;text-anchor:middle}
+
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--gd)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ASM<span>64</span></div>
+  <div>
+    <div class="subtitle">CUSTOM CPU ASSEMBLER + SIMULATOR<span class="cursor"></span></div>
+    <div class="subtitle" style="margin-top:1px;font-size:.55rem;">8-BIT / 4-BIT OPCODE+OPERAND · REAL-TIME LINT · JMP EXPANSION · CPU SIM</div>
+  </div>
+  <div class="status-chips">
+    <div class="chip" id="chipAssm">READY</div>
+    <div class="chip" id="chipSim">SIM: IDLE</div>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- ══ EDITOR PANEL ══ -->
+<div class="panel">
+  <div class="ph"><span class="dot"></span><span class="dot a"></span><span class="dot r"></span>&nbsp; SOURCE EDITOR</div>
+  <div class="editor-wrap">
+    <div class="gutter" id="gutter"></div>
+    <textarea id="src" spellcheck="false" placeholder="; サンプル ——
+; JMP LABEL は自動展開されます
+START:
+    LUI 0x0
+    LLI 0x5    ; Reg = 0x05
+    MOV ACC    ; ACC = Reg
+    LUI 0x0
+    LLI 0x1
+    MOV TMPR   ; TMPR = 1
+    SUB ACC    ; ACC = ACC - TMPR
+    JN START   ; 負なら START へ
+"></textarea>
+  </div>
+  <div class="err-list" id="errList"></div>
+  <div class="ctrls">
+    <button onclick="doAssemble()"><span>▶ ASSEMBLE</span></button>
+    <button class="s" onclick="loadExample()"><span>EXAMPLE</span></button>
+    <button class="danger" onclick="clearAll()"><span>CLEAR</span></button>
+    <select id="fmtSel">
+      <option value="both">BIN+HEX</option>
+      <option value="bin">BINARY</option>
+      <option value="hex">HEX</option>
+      <option value="logisim">LOGISIM</option>
+    </select>
+  </div>
+</div>
+
+<!-- ══ OUTPUT PANEL ══ -->
+<div class="panel">
+  <div class="ph"><span class="dot"></span>&nbsp; MACHINE CODE</div>
+  <div class="out-body" id="outBody"><span style="color:var(--gdk)">; アセンブルすると表示されます</span></div>
+  <div class="ctrls">
+    <button class="s" onclick="copyOut()"><span>COPY</span></button>
+    <button class="s" onclick="dlOut()"><span>DOWNLOAD</span></button>
+    <button class="am" onclick="loadToSim()"><span>→ SIM</span></button>
+  </div>
+</div>
+
+<!-- ══ SIMULATOR PANEL ══ -->
+<div class="panel">
+  <div class="ph"><span class="dot a"></span>&nbsp; CPU SIMULATOR</div>
+
+  <div class="sim-section">
+    <h3>REGISTERS</h3>
+    <div class="regs">
+      <div class="reg-item" id="ri-pc"><span class="reg-name">PC</span><span class="reg-val" id="rv-pc">0x00</span></div>
+      <div class="reg-item" id="ri-reg"><span class="reg-name">Reg</span><span class="reg-val" id="rv-reg">0x00</span></div>
+      <div class="reg-item" id="ri-acc"><span class="reg-name">ACC</span><span class="reg-val" id="rv-acc">0x00</span></div>
+      <div class="reg-item" id="ri-tmpr"><span class="reg-name">TMPR</span><span class="reg-val" id="rv-tmpr">0x00</span></div>
+      <div class="reg-item" id="ri-mar"><span class="reg-name">MAR</span><span class="reg-val" id="rv-mar">0x00</span></div>
+      <div class="reg-item" id="ri-ir"><span class="reg-name">IR</span><span class="reg-val" id="rv-ir">--</span></div>
+    </div>
+    <div class="flags">
+      <div class="flag clr" id="fl-c">C=0</div>
+      <div class="flag clr" id="fl-n">N=0</div>
+    </div>
+  </div>
+
+  <div class="sim-section">
+    <h3>RAM (256B) &nbsp;<span style="color:var(--gdk);font-size:.55rem">addr 0x00–0xFF &nbsp; click=edit</span></h3>
+    <div class="ram-hdr" id="ramHdr"></div>
+    <div class="ram-grid" id="ramGrid"></div>
+  </div>
+
+  <div class="ctrls">
+    <button class="am" id="btnStep" onclick="simStep()" disabled><span>STEP ▶</span></button>
+    <button class="am" id="btnRun" onclick="simRun()" disabled><span>RUN ▶▶</span></button>
+    <button class="s" id="btnPause" onclick="simPause()" disabled><span>PAUSE</span></button>
+    <button class="danger" id="btnReset" onclick="simReset()" disabled><span>RESET</span></button>
+    <select id="speedSel">
+      <option value="500">0.5×</option>
+      <option value="200" selected>1×</option>
+      <option value="80">3×</option>
+      <option value="30">10×</option>
+    </select>
+  </div>
+
+  <div class="step-log" id="stepLog"><span style="color:var(--gdk);font-size:.65rem">; ステップログ</span></div>
+</div>
+</div>
+
+<!-- ══ ARCHITECTURE DIAGRAM ══ -->
+<div class="arch-panel">
+  <div class="ph" onclick="toggleArch()" title="クリックで折りたたむ">
+    <span class="dot a" style="animation-delay:.5s"></span>&nbsp; ARCHITECTURE DIAGRAM &nbsp;
+    <span style="margin-left:auto;font-size:.55rem;color:var(--gdk)" id="archToggleLbl">▼ CLICK TO COLLAPSE</span>
+  </div>
+  <div class="arch-svg-wrap" id="archWrap">
+  <svg id="arch" viewBox="0 0 700 185" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#003322"/>
+      </marker>
+      <marker id="arr-active" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="var(--g)"/>
+      </marker>
+      <marker id="arr-active2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="var(--a)"/>
+      </marker>
+    </defs>
+
+    <!-- Connections (drawn first, behind components) -->
+    <!-- PC ↔ ++ -->
+    <line class="conn" id="cn-pc-inc" x1="530" y1="18" x2="555" y2="18"/>
+    <line class="conn" id="cn-inc-pc" x1="555" y1="30" x2="530" y2="38"/>
+    <!-- PC → ROM addr -->
+    <line class="conn" id="cn-pc-rom" x1="490" y1="26" x2="350" y2="26" marker-end="url(#arr)"/>
+    <text class="lbl" x="420" y="20">ROM Addr</text>
+    <!-- ROM → IR -->
+    <line class="conn" id="cn-rom-ir" x1="290" y1="48" x2="290" y2="68" marker-end="url(#arr)"/>
+    <!-- IR → IR_buf -->
+    <line class="conn" id="cn-ir-buf" x1="290" y1="88" x2="290" y2="108" marker-end="url(#arr)"/>
+    <!-- IR → DEC (opcode) -->
+    <line class="conn" id="cn-ir-dec" x1="265" y1="78" x2="185" y2="78" marker-end="url(#arr)"/>
+    <text class="lbl" x="225" y="72">4</text>
+    <!-- IR_buf → BUS -->
+    <line class="conn" id="cn-buf-bus" x1="290" y1="128" x2="290" y2="148" marker-end="url(#arr)"/>
+    <!-- DEC → BUS -->
+    <line class="conn" id="cn-dec-bus" x1="155" y1="95" x2="155" y2="148" marker-end="url(#arr)"/>
+    <!-- STC → DEC2 -->
+    <line class="conn" id="cn-stc-dec" x1="65" y1="78" x2="95" y2="78" marker-end="url(#arr)"/>
+    <!-- DEC2 ↔ STC -->
+    <line class="conn" id="cn-dec-stc" x1="65" y1="66" x2="65" y2="52" marker-end="url(#arr)"/>
+    <!-- Reg ↔ BUS -->
+    <line class="conn" id="cn-reg-bus" x1="605" y1="100" x2="605" y2="163" marker-end="url(#arr)"/>
+    <line class="conn" id="cn-bus-reg" x1="595" y1="163" x2="595" y2="100" marker-end="url(#arr)"/>
+    <text class="lbl" x="618" y="132">8</text>
+    <!-- Reg ↔ PC -->
+    <line class="conn" id="cn-reg-pc" x1="605" y1="88" x2="530" y2="45" marker-end="url(#arr)"/>
+    <line class="conn" id="cn-pc-reg" x1="525" y1="48" x2="595" y2="90" marker-end="url(#arr)"/>
+    <text class="lbl" x="570" y="62">8</text>
+    <!-- BUS → MAR -->
+    <line class="conn" id="cn-bus-mar" x1="195" y1="178" x2="195" y2="193" marker-end="url(#arr)"/>
+    <!-- MAR → RAM addr -->
+    <line class="conn" id="cn-mar-ram" x1="185" y1="210" x2="155" y2="210" x2="155" y2="218" marker-end="url(#arr)"/>
+    <text class="lbl" x="148" y="215">Addr</text>
+    <!-- BUS ↔ RAM data -->
+    <line class="conn" id="cn-bus-ram" x1="220" y1="163" x2="220" y2="240" marker-end="url(#arr)"/>
+    <line class="conn" id="cn-ram-bus" x1="230" y1="240" x2="230" y2="163" marker-end="url(#arr)"/>
+    <text class="lbl" x="253" y="205">RAM Data</text>
+    <!-- BUS → ACC -->
+    <line class="conn" id="cn-bus-acc" x1="380" y1="163" x2="380" y2="193" marker-end="url(#arr)"/>
+    <line class="conn" id="cn-acc-bus" x1="390" y1="193" x2="390" y2="163" marker-end="url(#arr)"/>
+    <text class="lbl" x="403" y="178">8</text>
+    <!-- BUS → TMPR -->
+    <line class="conn" id="cn-bus-tmpr" x1="480" y1="163" x2="480" y2="193" marker-end="url(#arr)"/>
+    <line class="conn" id="cn-tmpr-bus" x1="490" y1="193" x2="490" y2="163" marker-end="url(#arr)"/>
+    <text class="lbl" x="503" y="178">8</text>
+    <!-- ACC → ALU -->
+    <line class="conn" id="cn-acc-alu" x1="385" y1="213" x2="385" y2="230" marker-end="url(#arr)"/>
+    <text class="lbl" x="373" y="223">8</text>
+    <!-- TMPR → ALU -->
+    <line class="conn" id="cn-tmpr-alu" x1="475" y1="213" x2="445" y2="230" marker-end="url(#arr)"/>
+    <text class="lbl" x="467" y="223">8</text>
+    <!-- ALU → BUS -->
+    <line class="conn" id="cn-alu-bus" x1="415" y1="228" x2="415" y2="163" marker-end="url(#arr)"/>
+    <text class="lbl" x="427" y="196">8</text>
+    <!-- ALU → FR -->
+    <line class="conn" id="cn-alu-fr" x1="450" y1="238" x2="465" y2="238" marker-end="url(#arr)"/>
+
+    <!-- DATA BUS -->
+    <rect class="bus-rect" id="bus" x="130" y="148" width="480" height="18" rx="2"/>
+    <text class="bus-text" id="bus-t" x="370" y="157">DATA BUS</text>
+
+    <!-- Components -->
+    <g class="comp" id="comp-stc">
+      <rect x="30" y="44" width="52" height="26" rx="3"/>
+      <text x="56" y="57">STC</text>
+    </g>
+    <g class="comp" id="comp-dec">
+      <rect x="95" y="57" width="60" height="30" rx="3"/>
+      <text x="125" y="72">DEC</text>
+    </g>
+    <g class="comp" id="comp-rom">
+      <rect x="255" y="10" width="68" height="34" rx="3"/>
+      <text x="289" y="27">ROM</text>
+    </g>
+    <g class="comp" id="comp-ir">
+      <rect x="258" y="52" width="64" height="26" rx="3"/>
+      <text x="290" y="65">IR</text>
+    </g>
+    <g class="comp" id="comp-irbuf">
+      <rect x="250" y="86" width="80" height="26" rx="3"/>
+      <text x="290" y="99">IR buffer</text>
+    </g>
+    <g class="comp" id="comp-pc">
+      <rect x="490" y="10" width="60" height="42" rx="3"/>
+      <text x="520" y="31">PC</text>
+    </g>
+    <g class="comp" id="comp-inc">
+      <rect x="556" y="8" width="36" height="26" rx="3"/>
+      <text x="574" y="21">++</text>
+    </g>
+    <g class="comp" id="comp-reg">
+      <rect x="577" y="80" width="56" height="32" rx="3"/>
+      <text x="605" y="96">Reg</text>
+    </g>
+    <g class="comp" id="comp-mar">
+      <rect x="162" y="170" width="60" height="26" rx="3"/>
+      <text x="192" y="183">MAR</text>
+    </g>
+    <g class="comp" id="comp-ram">
+      <rect x="130" y="218" width="60" height="26" rx="3"/>
+      <text x="160" y="231">RAM</text>
+    </g>
+    <g class="comp" id="comp-acc">
+      <rect x="355" y="170" width="60" height="30" rx="3"/>
+      <text x="385" y="185">ACC</text>
+    </g>
+    <g class="comp" id="comp-tmpr">
+      <rect x="453" y="170" width="60" height="30" rx="3"/>
+      <text x="483" y="185">TMPR</text>
+    </g>
+    <g class="comp" id="comp-alu">
+      <rect x="363" y="218" width="80" height="30" rx="3"/>
+      <text x="403" y="233">ALU</text>
+    </g>
+    <g class="comp" id="comp-fr">
+      <rect x="465" y="218" width="40" height="30" rx="3"/>
+      <text x="485" y="233">FR</text>
+    </g>
+  </svg>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// ISA DEFINITION
+// ══════════════════════════════════════════════
+const ISA = [
+  {mnem:'LUI', op:0x0, opb:'0000', fmt:'imm4', desc:'Reg[7:4] = imm'},
+  {mnem:'LLI', op:0x1, opb:'0001', fmt:'imm4', desc:'Reg[3:0] = imm'},
+  {mnem:'LD',  op:0x2, opb:'0010', fmt:'dest', desc:'dest = RAM[MAR]'},
+  {mnem:'STR', op:0x3, opb:'0011', fmt:'dest', desc:'RAM[MAR] = src'},
+  {mnem:'ADD', op:0x4, opb:'0100', fmt:'dest', desc:'dest = ACC+TMPR'},
+  {mnem:'SUB', op:0x5, opb:'0101', fmt:'dest', desc:'dest = ACC-TMPR'},
+  {mnem:'THR', op:0x6, opb:'0110', fmt:'none', desc:'Reg = ACC (ALU)'},
+  {mnem:'PCL', op:0x7, opb:'0111', fmt:'none', desc:'PC = Reg'},
+  {mnem:'XOR', op:0x8, opb:'1000', fmt:'dest', desc:'dest = ACC^TMPR'},
+  {mnem:'OR',  op:0x9, opb:'1001', fmt:'dest', desc:'dest = ACC|TMPR'},
+  {mnem:'AND', op:0xA, opb:'1010', fmt:'dest', desc:'dest = ACC&TMPR'},
+  {mnem:'PCX', op:0xB, opb:'1011', fmt:'dest', desc:'dest = PC'},
+  {mnem:'JMP', op:0xC, opb:'1100', fmt:'none', desc:'PC = Reg'},
+  {mnem:'JC',  op:0xD, opb:'1101', fmt:'none', desc:'if C: PC = MAR'},
+  {mnem:'JN',  op:0xE, opb:'1110', fmt:'none', desc:'if N: PC = MAR'},
+  {mnem:'MOV', op:0xF, opb:'1111', fmt:'dest', desc:'dest = Reg'},
+];
+const DEST = {REG:'00',ACC:'01',TMPR:'10',MAR:'11'};
+const DEST_NAMES = ['Reg','ACC','TMPR','MAR'];
+
+// ══════════════════════════════════════════════
+// ASSEMBLER
+// ══════════════════════════════════════════════
+function isLabelRef(arg) {
+  if (!arg) return false;
+  const u = arg.toUpperCase();
+  return !/^(0X|0B|[0-9])/.test(u) && !DEST[u];
+}
+
+function instrSize(mnem, arg) {
+  if ((mnem==='JMP'||mnem==='PCL') && isLabelRef(arg)) return 3; // LUI+LLI+JMP
+  if ((mnem==='JC'||mnem==='JN')   && isLabelRef(arg)) return 4; // LUI+LLI+MOV MAR+JC/JN
+  return 1;
+}
+
+function assemble(src) {
+  const lines = src.split('\n');
+  const parsed = lines.map((raw,i) => {
+    const stripped = raw.replace(/;.*$/,'').trim();
+    if (!stripped) return {type:'blank', raw, ln:i+1};
+    if (/^[A-Za-z_][A-Za-z0-9_]*:$/.test(stripped))
+      return {type:'label', name:stripped.slice(0,-1).toUpperCase(), raw, ln:i+1};
+    const tok = stripped.split(/\s+/);
+    return {type:'instr', mnem:tok[0].toUpperCase(), arg:(tok[1]||'').replace(',',''), raw, ln:i+1};
+  });
+
+  // Pass 1: resolve label addresses (accounting for expansion)
+  const labels = {};
+  let addr = 0;
+  for (const p of parsed) {
+    if (p.type==='label') labels[p.name] = addr;
+    else if (p.type==='instr') addr += instrSize(p.mnem, p.arg);
+  }
+
+  // Pass 2: encode
+  const output = [];
+  const errors = [];
+  addr = 0;
+
+  for (const p of parsed) {
+    if (p.type==='blank') { output.push({type:'blank',raw:p.raw,ln:p.ln}); continue; }
+    if (p.type==='label') { output.push({type:'label',name:p.name,raw:p.raw,ln:p.ln}); continue; }
+
+    const {mnem, arg, raw, ln} = p;
+    const info = ISA.find(x=>x.mnem===mnem);
+
+    if (!info) {
+      errors.push({ln, msg:`Unknown mnemonic: ${mnem}`});
+      output.push({type:'error',ln,msg:`Unknown mnemonic: ${mnem}`,raw});
+      addr++;
+      continue;
+    }
+
+    // Label-based jump expansion
+    if (isLabelRef(arg) && (mnem==='JMP'||mnem==='PCL'||mnem==='JC'||mnem==='JN')) {
+      const lname = arg.toUpperCase();
+      if (!(lname in labels)) {
+        errors.push({ln, msg:`Undefined label: ${arg}`});
+        output.push({type:'error',ln,msg:`Undefined label: ${arg}`,raw});
+        addr++;
+        continue;
+      }
+      const tgt = labels[lname];
+      const hi = (tgt>>4)&0xF, lo = tgt&0xF;
+      output.push({type:'instr',addr:addr++,byte:(0x0<<4)|hi,bits:'0000'+hi.toString(2).padStart(4,'0'),mnem:'LUI',raw,expanded:true,expSrc:`${mnem} ${arg}`});
+      output.push({type:'instr',addr:addr++,byte:(0x1<<4)|lo,bits:'0001'+lo.toString(2).padStart(4,'0'),mnem:'LLI',raw,expanded:true,expSrc:`→ addr 0x${tgt.toString(16).padStart(2,'0').toUpperCase()}`});
+      if (mnem==='JC'||mnem==='JN') {
+        // MOV MAR (1111 11 00)
+        output.push({type:'instr',addr:addr++,byte:0xFF&0b11111100,bits:'11111100',mnem:'MOV MAR',raw,expanded:true,expSrc:'→ MAR = Reg'});
+      }
+      output.push({type:'instr',addr:addr++,byte:(info.op<<4),bits:info.opb+'0000',mnem,raw,expanded:false,expSrc:'(expanded)'});
+      continue;
+    }
+
+    // Normal encoding
+    let nibble = 0;
+    let bits = info.opb;
+    let encOk = true;
+
+    if (info.fmt==='imm4') {
+      if (!arg) {
+        errors.push({ln,msg:`${mnem}: immediate required`});
+        output.push({type:'error',ln,msg:`${mnem}: immediate required`,raw});
+        addr++; continue;
+      }
+      const u = arg.toUpperCase();
+      let val = u.startsWith('0X') ? parseInt(u.slice(2),16)
+              : u.startsWith('0B') ? parseInt(u.slice(2),2)
+              : parseInt(u,10);
+      if (isNaN(val)||val<0||val>15) {
+        errors.push({ln,msg:`${mnem}: immediate out of range 0–15 (got ${arg})`});
+        output.push({type:'error',ln,msg:`Imm out of range: ${arg}`,raw});
+        addr++; continue;
+      }
+      nibble = val;
+      bits += val.toString(2).padStart(4,'0');
+    } else if (info.fmt==='dest') {
+      const u = arg.toUpperCase();
+      const db = DEST[u];
+      if (!db) {
+        errors.push({ln,msg:`${mnem}: invalid dest "${arg}" (use REG/ACC/TMPR/MAR)`});
+        output.push({type:'error',ln,msg:`Invalid dest: ${arg||'(none)'}`,raw});
+        addr++; continue;
+      }
+      nibble = {REG:0,ACC:1,TMPR:2,MAR:3}[u];
+      bits += db + '00';
+    } else {
+      bits += '0000';
+    }
+
+    const byteVal = (info.op<<4) | (info.fmt==='imm4' ? nibble : (info.fmt==='dest' ? (nibble<<2) : 0));
+    output.push({type:'instr',addr,byte:byteVal,bits,mnem,arg,raw,ln,expanded:false});
+    addr++;
+  }
+
+  return {output, labels, errors, totalBytes:addr};
+}
+
+// ══════════════════════════════════════════════
+// UI STATE
+// ══════════════════════════════════════════════
+let assembled = null;   // last assemble result
+let romBytes  = [];     // bytes loaded into simulator
+let simRunning = false;
+let simTimer = null;
+let stepCount = 0;
+
+// CPU state
+const cpu = {
+  pc:0, reg:0, acc:0, tmpr:0, mar:0, ir:0,
+  ram: new Uint8Array(256),
+  carry:false, negative:false, halted:false
+};
+
+// ══════════════════════════════════════════════
+// EDITOR + REAL-TIME LINT
+// ══════════════════════════════════════════════
+const srcEl   = document.getElementById('src');
+const gutterEl= document.getElementById('gutter');
+const errList = document.getElementById('errList');
+let lintTimer = null;
+
+srcEl.addEventListener('input', () => {
+  clearTimeout(lintTimer);
+  lintTimer = setTimeout(doLint, 280);
+  syncGutter();
+});
+srcEl.addEventListener('scroll', () => {
+  gutterEl.scrollTop = srcEl.scrollTop;
+});
+srcEl.addEventListener('keydown', e => {
+  if (e.key==='Tab') {
+    e.preventDefault();
+    const s=srcEl.selectionStart, en=srcEl.selectionEnd;
+    srcEl.value=srcEl.value.slice(0,s)+'    '+srcEl.value.slice(en);
+    srcEl.selectionStart=srcEl.selectionEnd=s+4;
+    syncGutter();
+  }
+});
+
+function syncGutter() {
+  const lines = srcEl.value.split('\n');
+  const errs = assembled?.errors || [];
+  const errLines = new Set(errs.map(e=>e.ln));
+  const pcLine = simRunning ? getPCSourceLine() : -1;
+
+  gutterEl.innerHTML = lines.map((_,i) => {
+    const ln = i+1;
+    let marker = '';
+    if (errLines.has(ln)) marker = `<span class="gutter-err" title="${errs.find(e=>e.ln===ln)?.msg}"></span>`;
+    else marker = `<span class="gutter-ok"></span>`;
+    return `<div class="gutter-row"><span class="gutter-num">${ln}</span>${marker}</div>`;
+  }).join('');
+}
+
+function getPCSourceLine() { return -1; } // future: map PC to line
+
+function doLint() {
+  if (!srcEl.value.trim()) { assembled=null; showErrors([]); syncGutter(); setChipAssm('READY',''); return; }
+  assembled = assemble(srcEl.value);
+  showErrors(assembled.errors);
+  syncGutter();
+  if (assembled.errors.length===0) {
+    setChipAssm(`OK · ${assembled.totalBytes}B`, 'ok');
+    renderOutput(assembled, document.getElementById('fmtSel').value);
+  } else {
+    setChipAssm(`${assembled.errors.length} ERROR(S)`,'err');
+    renderOutput(assembled, document.getElementById('fmtSel').value);
+  }
+}
+
+function showErrors(errs) {
+  errList.innerHTML = errs.map(e =>
+    `<div class="err-item" onclick="gotoLine(${e.ln})">
+      <span class="elabel">L${e.ln}</span>
+      <span>${escH(e.msg)}</span>
+    </div>`
+  ).join('');
+}
+
+function gotoLine(ln) {
+  const lines = srcEl.value.split('\n');
+  let pos = 0;
+  for (let i=0; i<ln-1; i++) pos += lines[i].length + 1;
+  srcEl.focus();
+  srcEl.setSelectionRange(pos, pos + (lines[ln-1]||'').length);
+}
+
+// ══════════════════════════════════════════════
+// ASSEMBLE + RENDER OUTPUT
+// ══════════════════════════════════════════════
+function doAssemble() {
+  doLint();
+}
+
+function renderOutput(res, fmt) {
+  const {output} = res;
+  let html = '';
+
+  if (fmt==='logisim') html += `<span class="oi-comment">v2.0 raw\n</span>`;
+
+  for (const ins of output) {
+    if (ins.type==='blank')   { html += '\n'; continue; }
+    if (ins.type==='label')   { html += `<span class="oi-lbl">${escH(ins.name)}:</span>\n`; continue; }
+    if (ins.type==='comment') { html += `<span class="oi-comment">${escH(ins.raw)}</span>\n`; continue; }
+    if (ins.type==='error')   { html += `<span class="oi-err">! L${ins.ln}: ${escH(ins.msg)}</span>  <span style="color:var(--gdk)">${escH(ins.raw)}</span>\n`; continue; }
+
+    const hex = ins.byte.toString(16).toUpperCase().padStart(2,'0');
+    const addrH = ins.addr.toString(16).toUpperCase().padStart(2,'0');
+    const isExpanded = ins.expanded;
+    const rowClass = isExpanded ? 'oi-exp' : '';
+    const expandMark = isExpanded ? `<span style="color:#005530">↳</span> ` : '';
+
+    let lineCode = '';
+    if (fmt==='bin')     lineCode = `<span class="oi-addr">[${addrH}] </span><span class="oi-bin">${ins.bits}</span>`;
+    else if (fmt==='hex') lineCode = `<span class="oi-addr">[${addrH}] </span><span class="oi-hex">${hex}</span>`;
+    else if (fmt==='both') lineCode = `<span class="oi-addr">[${addrH}] </span><span class="oi-bin">${ins.bits}</span> <span class="oi-hex">0x${hex}</span>`;
+    else if (fmt==='logisim') lineCode = `<span class="oi-hex">${hex}</span>`;
+
+    const srcNote = isExpanded ? `  <span class="oi-src">${escH(ins.expSrc||'')}</span>` : `  <span class="oi-src">; ${escH(ins.raw.replace(/;.*$/,'').trim())}</span>`;
+    html += `<div class="${rowClass}" data-addr="${ins.addr}">${expandMark}${lineCode} <span class="oi-mnem">${ins.mnem}</span>${srcNote}</div>\n`;
+  }
+  document.getElementById('outBody').innerHTML = html;
+}
+
+function copyOut() {
+  if (!assembled) return;
+  const bytes = assembled.output.filter(x=>x.type==='instr').map(x=>x.byte.toString(16).padStart(2,'0').toUpperCase());
+  navigator.clipboard.writeText(bytes.join('\n'));
+}
+function dlOut() {
+  if (!assembled) return;
+  const bytes = assembled.output.filter(x=>x.type==='instr').map(x=>x.byte.toString(16).padStart(2,'0').toUpperCase());
+  const b = new Blob([bytes.join('\n')],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='output.hex'; a.click();
+}
+function loadToSim() {
+  if (!assembled||assembled.errors.length>0) { alert('エラーがある場合はシミュレーターに読み込めません'); return; }
+  romBytes = assembled.output.filter(x=>x.type==='instr').map(x=>x.byte);
+  simReset();
+  setChipSim('LOADED · '+romBytes.length+'B','ok');
+  document.getElementById('btnStep').disabled = false;
+  document.getElementById('btnRun').disabled  = false;
+  document.getElementById('btnReset').disabled= false;
+  addLog(-1,'ROM LOADED: '+romBytes.length+' bytes');
+}
+
+// ══════════════════════════════════════════════
+// CPU SIMULATOR
+// ══════════════════════════════════════════════
+const ACTIVE_MAP = {
+  lui:  ['comp-irbuf','bus','comp-reg'],
+  lli:  ['comp-irbuf','bus','comp-reg'],
+  ld:   ['comp-mar','comp-ram','bus'],
+  str:  ['bus','comp-mar','comp-ram'],
+  add:  ['comp-acc','comp-tmpr','comp-alu','comp-fr','bus'],
+  sub:  ['comp-acc','comp-tmpr','comp-alu','comp-fr','bus'],
+  thr:  ['comp-acc','comp-alu','bus','comp-reg'],
+  pcl:  ['comp-reg','comp-pc'],
+  xor:  ['comp-acc','comp-tmpr','comp-alu','comp-fr','bus'],
+  or:   ['comp-acc','comp-tmpr','comp-alu','comp-fr','bus'],
+  and:  ['comp-acc','comp-tmpr','comp-alu','comp-fr','bus'],
+  pcx:  ['comp-pc','bus'],
+  jmp:  ['comp-reg','comp-pc'],
+  jc:   ['comp-fr','comp-mar','comp-pc'],
+  jn:   ['comp-fr','comp-mar','comp-pc'],
+  mov:  ['comp-reg','bus'],
+};
+const DEST_COMP = ['comp-reg','comp-acc','comp-tmpr','comp-mar'];
+
+function cpuStep() {
+  if (cpu.halted || cpu.pc >= romBytes.length) { cpu.halted=true; return null; }
+
+  const instr = romBytes[cpu.pc];
+  const op  = (instr>>4)&0xF;
+  const aa  = (instr>>2)&0x3;
+  const imm =  instr    &0xF;
+
+  const prev = {...cpu};
+  cpu.ir = instr;
+  cpu.pc++;
+
+  const getR = (i) => [cpu.reg,cpu.acc,cpu.tmpr,cpu.mar][i];
+  const setR = (i,v) => { v=v&0xFF; if(i===0)cpu.reg=v; else if(i===1)cpu.acc=v; else if(i===2)cpu.tmpr=v; else cpu.mar=v; };
+  const setFlags = (v) => { cpu.carry=(v>0xFF||v<0); cpu.negative=(v&0x80)!==0; };
+
+  let desc='', active=[];
+
+  switch(op) {
+    case 0x0: cpu.reg=(cpu.reg&0x0F)|(imm<<4);           desc=`LUI ${imm}: Reg=0x${cpu.reg.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.lui]; break;
+    case 0x1: cpu.reg=(cpu.reg&0xF0)|imm;                 desc=`LLI ${imm}: Reg=0x${cpu.reg.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.lli]; break;
+    case 0x2:{ const v=cpu.ram[cpu.mar]; setR(aa,v);      desc=`LD ${DEST_NAMES[aa]}: RAM[0x${cpu.mar.toString(16).toUpperCase()}]=0x${v.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.ld,DEST_COMP[aa]]; break;}
+    case 0x3:{ const v=getR(aa); cpu.ram[cpu.mar]=v&0xFF; desc=`STR ${DEST_NAMES[aa]}: RAM[0x${cpu.mar.toString(16).toUpperCase()}]=0x${v.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.str,DEST_COMP[aa]]; renderRAM(); break;}
+    case 0x4:{ const r=cpu.acc+cpu.tmpr; setFlags(r); setR(aa,r); desc=`ADD: ${cpu.acc}+${cpu.tmpr}=${r&0xFF} → ${DEST_NAMES[aa]}`; active=[...ACTIVE_MAP.add,DEST_COMP[aa]]; break;}
+    case 0x5:{ const r=cpu.acc-cpu.tmpr; setFlags(r); setR(aa,r&0xFF); desc=`SUB: ${prev.acc}-${prev.tmpr}=${r&0xFF} → ${DEST_NAMES[aa]}`; active=[...ACTIVE_MAP.sub,DEST_COMP[aa]]; break;}
+    case 0x6: cpu.reg=cpu.acc;                             desc=`THR: Reg=ACC=0x${cpu.reg.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.thr]; break;
+    case 0x7: cpu.pc=cpu.reg;                              desc=`PCL: PC=Reg=0x${cpu.reg.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.pcl]; break;
+    case 0x8:{ const r=cpu.acc^cpu.tmpr; setFlags(r); setR(aa,r); desc=`XOR → ${DEST_NAMES[aa]}=0x${r.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.xor,DEST_COMP[aa]]; break;}
+    case 0x9:{ const r=cpu.acc|cpu.tmpr; setFlags(r); setR(aa,r); desc=`OR → ${DEST_NAMES[aa]}=0x${r.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.or,DEST_COMP[aa]]; break;}
+    case 0xA:{ const r=cpu.acc&cpu.tmpr; setFlags(r); setR(aa,r); desc=`AND → ${DEST_NAMES[aa]}=0x${r.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.and,DEST_COMP[aa]]; break;}
+    case 0xB: setR(aa,cpu.pc);                             desc=`PCX: ${DEST_NAMES[aa]}=PC=0x${cpu.pc.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.pcx,DEST_COMP[aa]]; break;
+    case 0xC: cpu.pc=cpu.reg;                              desc=`JMP: PC=Reg=0x${cpu.reg.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.jmp]; break;
+    case 0xD: if(cpu.carry){cpu.pc=cpu.mar;desc=`JC: C=1 → PC=MAR=0x${cpu.mar.toString(16).toUpperCase()}`;}else{desc=`JC: C=0 → no jump`;} active=[...ACTIVE_MAP.jc]; break;
+    case 0xE: if(cpu.negative){cpu.pc=cpu.mar;desc=`JN: N=1 → PC=MAR=0x${cpu.mar.toString(16).toUpperCase()}`;}else{desc=`JN: N=0 → no jump`;} active=[...ACTIVE_MAP.jn]; break;
+    case 0xF:{ const v=cpu.reg; setR(aa,v); desc=`MOV ${DEST_NAMES[aa]}=Reg=0x${v.toString(16).padStart(2,'0').toUpperCase()}`; active=[...ACTIVE_MAP.mov,DEST_COMP[aa]]; break;}
+  }
+
+  return {desc, active, prev, instr, pc: prev.pc};
+}
+
+function simStep() {
+  if (romBytes.length===0) return;
+  const result = cpuStep();
+  if (!result) { setChipSim('HALTED','err'); cpu.halted=true; return; }
+  stepCount++;
+  updateRegDisplay(result.prev);
+  renderRAM();
+  highlightArch(result.active);
+  addLog(result.pc, result.desc);
+  highlightOutputRow(result.pc);
+  if (cpu.halted || cpu.pc >= romBytes.length) { setChipSim('HALTED',''); simPause(); }
+}
+
+function simRun() {
+  if (simRunning) return;
+  simRunning = true;
+  setChipSim('RUNNING','run');
+  document.getElementById('btnPause').disabled = false;
+  document.getElementById('btnStep').disabled  = true;
+  const delay = parseInt(document.getElementById('speedSel').value);
+  simTimer = setInterval(() => {
+    simStep();
+    if (cpu.halted || cpu.pc >= romBytes.length) simPause();
+  }, delay);
+}
+
+function simPause() {
+  simRunning = false;
+  clearInterval(simTimer);
+  setChipSim('PAUSED','');
+  document.getElementById('btnPause').disabled = true;
+  document.getElementById('btnStep').disabled  = false;
+}
+
+function simReset() {
+  simPause();
+  cpu.pc=0; cpu.reg=0; cpu.acc=0; cpu.tmpr=0; cpu.mar=0; cpu.ir=0;
+  cpu.carry=false; cpu.negative=false; cpu.halted=false;
+  stepCount=0;
+  updateRegDisplay(null);
+  renderRAM();
+  clearArchHighlight();
+  document.getElementById('stepLog').innerHTML='<span style="color:var(--gdk);font-size:.65rem">; ステップログ</span>';
+  setChipSim('RESET','');
+  highlightOutputRow(-1);
+}
+
+// ══════════════════════════════════════════════
+// REGISTER DISPLAY
+// ══════════════════════════════════════════════
+function h2(v){ return '0x'+v.toString(16).padStart(2,'0').toUpperCase(); }
+
+function updateRegDisplay(prev) {
+  const fields = [
+    ['pc','pc'],['reg','reg'],['acc','acc'],['tmpr','tmpr'],['mar','mar']
+  ];
+  for (const [id,key] of fields) {
+    const el = document.getElementById('rv-'+id);
+    const ri = document.getElementById('ri-'+id);
+    el.textContent = h2(cpu[key]);
+    const changed = prev && cpu[key] !== prev[key];
+    ri.classList.toggle('changed', changed);
+    if (changed) setTimeout(()=>ri.classList.remove('changed'),600);
+  }
+  document.getElementById('rv-ir').textContent = cpu.ir.toString(2).padStart(8,'0');
+
+  const fc = document.getElementById('fl-c');
+  const fn = document.getElementById('fl-n');
+  fc.textContent = 'C='+(cpu.carry?'1':'0');
+  fn.textContent = 'N='+(cpu.negative?'1':'0');
+  fc.className = 'flag '+(cpu.carry?'set':'clr');
+  fn.className = 'flag '+(cpu.negative?'set':'clr');
+}
+
+// ══════════════════════════════════════════════
+// RAM DISPLAY
+// ══════════════════════════════════════════════
+function buildRAMGrid() {
+  const hdr = document.getElementById('ramHdr');
+  hdr.innerHTML = Array.from({length:16},(_,i)=>`<div class="ram-hdr-cell">${i.toString(16).toUpperCase()}</div>`).join('');
+  renderRAM();
+}
+
+function renderRAM() {
+  const grid = document.getElementById('ramGrid');
+  grid.innerHTML = Array.from({length:256},(_,i)=>{
+    const v = cpu.ram[i];
+    const cls = i===cpu.mar ? 'ram-cell active' : v!==0 ? 'ram-cell nz' : 'ram-cell';
+    const hex = v.toString(16).padStart(2,'0').toUpperCase();
+    return `<div class="${cls}" title="[0x${i.toString(16).padStart(2,'0').toUpperCase()}]=0x${hex}" onclick="editRAM(${i})">${hex}</div>`;
+  }).join('');
+}
+
+function editRAM(addr) {
+  const cur = cpu.ram[addr].toString(16).padStart(2,'0').toUpperCase();
+  const inp = prompt(`RAM[0x${addr.toString(16).padStart(2,'0').toUpperCase()}] = ?  (hex, e.g. FF)`, cur);
+  if (inp === null) return;
+  const v = parseInt(inp, 16);
+  if (!isNaN(v) && v>=0 && v<=255) { cpu.ram[addr]=v; renderRAM(); }
+}
+
+// ══════════════════════════════════════════════
+// ARCHITECTURE DIAGRAM
+// ══════════════════════════════════════════════
+let archTimeout = null;
+
+function highlightArch(ids) {
+  clearArchHighlight();
+  // Also highlight bus whenever data flows
+  const busEl = document.getElementById('bus');
+  const busTEl = document.getElementById('bus-t');
+  if (ids.includes('bus')) {
+    busEl.classList.add('active');
+    busTEl.classList.add('active');
+  }
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
+  }
+  archTimeout = setTimeout(clearArchHighlight, 600);
+}
+
+function clearArchHighlight() {
+  clearTimeout(archTimeout);
+  document.querySelectorAll('.comp.active,.comp.active2').forEach(e=>e.classList.remove('active','active2'));
+  document.getElementById('bus').classList.remove('active');
+  document.getElementById('bus-t').classList.remove('active');
+}
+
+let archVisible = true;
+function toggleArch() {
+  archVisible = !archVisible;
+  document.getElementById('archWrap').style.display = archVisible ? '' : 'none';
+  document.querySelector('.arch-panel').style.height = archVisible ? '220px' : '30px';
+  document.getElementById('archToggleLbl').textContent = archVisible ? '▼ CLICK TO COLLAPSE' : '▶ CLICK TO EXPAND';
+}
+
+// ══════════════════════════════════════════════
+// STEP LOG
+// ══════════════════════════════════════════════
+function addLog(pc, desc) {
+  const log = document.getElementById('stepLog');
+  const prev = log.querySelector('.latest');
+  if (prev) prev.classList.remove('latest');
+  const pcStr = pc >= 0 ? `<span class="log-pc">[${pc.toString(16).padStart(2,'0').toUpperCase()}]</span>` : '';
+  const div = document.createElement('div');
+  div.className = 'log-item latest';
+  div.innerHTML = `<span class="log-step">#${stepCount}</span>${pcStr}<span class="log-desc">${escH(desc)}</span>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  // Keep log manageable
+  while (log.children.length > 200) log.removeChild(log.firstChild);
+}
+
+// ══════════════════════════════════════════════
+// OUTPUT ROW HIGHLIGHTING (PC indicator)
+// ══════════════════════════════════════════════
+function highlightOutputRow(addr) {
+  document.querySelectorAll('#outBody .pc-row').forEach(e=>e.classList.remove('pc-row'));
+  document.querySelectorAll('#outBody .exe-row').forEach(e=>e.classList.add('exe-row'));
+  if (addr<0) return;
+  const el = document.querySelector(`#outBody [data-addr="${addr}"]`);
+  if (el) { el.classList.add('pc-row'); el.scrollIntoView({block:'nearest'}); }
+}
+
+// ══════════════════════════════════════════════
+// CHIP / STATUS HELPERS
+// ══════════════════════════════════════════════
+function setChipAssm(text, cls) {
+  const c = document.getElementById('chipAssm');
+  c.textContent = text; c.className='chip '+(cls||'');
+}
+function setChipSim(text, cls) {
+  const c = document.getElementById('chipSim');
+  c.textContent = 'SIM: '+text; c.className='chip '+(cls||'');
+}
+
+// ══════════════════════════════════════════════
+// EXAMPLE + MISC
+// ══════════════════════════════════════════════
+function loadExample() {
+  srcEl.value = `; ════ カウントダウン + メモリ書き込み例 ════
+; Reg に 0x0A をロード → ACC にコピー
+; 1 ずつ引いて 0 になるまでループ
+; 各ループで ACC をアドレス 0x10 に書き込む
+
+    LUI 0x1        ; Reg[7:4] = 1
+    LLI 0x0        ; Reg[3:0] = 0 → Reg = 0x10
+    MOV MAR        ; MAR = 0x10 (書き込み先)
+
+    LUI 0x0
+    LLI 0xA        ; Reg = 10
+    MOV ACC        ; ACC = 10
+
+    LUI 0x0
+    LLI 0x1
+    MOV TMPR       ; TMPR = 1
+
+LOOP:
+    STR ACC        ; RAM[MAR] = ACC (現在値を保存)
+    SUB ACC        ; ACC = ACC - TMPR
+    JN  DONE       ; 負ならDONEへ
+    JMP LOOP       ; ループ
+
+DONE:
+    PCL            ; (ここで停止相当)
+`;
+  syncGutter();
+  doLint();
+}
+
+function clearAll() {
+  srcEl.value='';
+  assembled=null;
+  document.getElementById('outBody').innerHTML='<span style="color:var(--gdk)">; クリアされました</span>';
+  showErrors([]);
+  syncGutter();
+  setChipAssm('READY','');
+}
+
+function escH(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ══════════════════════════════════════════════
+// INSTRUCTION REFERENCE (tooltip inject)
+// ══════════════════════════════════════════════
+// (shown in header title / could add a panel)
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+buildRAMGrid();
+updateRegDisplay(null);
+syncGutter();
+doLint();
+document.getElementById('fmtSel').addEventListener('change', () => {
+  if (assembled) renderOutput(assembled, document.getElementById('fmtSel').value);
+});
+</script>
+</body>
+</html>
